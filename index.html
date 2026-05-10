@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no"
+    />
+    <meta name="theme-color" content="#0b3d2e" />
+    <title>Ride the Deck</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main id="app">
+      <header class="hud">
+        <div class="hud-cell">
+          <span class="hud-label">Round</span>
+          <span class="hud-value" id="round">1<span class="hud-suffix">/13</span></span>
+        </div>
+        <div class="hud-cell hud-stage">
+          <span class="hud-label">Stage</span>
+          <span class="hud-value" id="stage-name">Red or Black</span>
+        </div>
+        <div class="hud-cell">
+          <span class="hud-label">Left</span>
+          <span class="hud-value" id="remaining">52</span>
+        </div>
+      </header>
+
+      <section class="board">
+        <div class="deck-wrap">
+          <div class="deck" id="deck" aria-hidden="true">
+            <div class="deck-card"></div>
+            <div class="deck-card"></div>
+            <div class="deck-card"></div>
+            <div class="deck-card"></div>
+          </div>
+        </div>
+
+        <div class="lane" id="lane" aria-live="polite"></div>
+
+        <div class="message" id="message"></div>
+      </section>
+
+      <section class="controls" id="controls"></section>
+
+      <div class="overlay" id="overlay" hidden>
+        <div class="overlay-card">
+          <h2 id="overlay-title">Ride the Deck</h2>
+          <p id="overlay-body">
+            Make it through all 52 cards: red/black, higher/lower, inside/outside, then guess the suit. One slip and the deck reshuffles.
+          </p>
+          <button class="btn primary" id="overlay-btn">Deal</button>
+        </div>
+      </div>
+    </main>
+
+    <script src="game.js"></script>
+  </body>
+</html>
