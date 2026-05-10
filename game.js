@@ -92,6 +92,57 @@
     message.className = "message" + (kind ? " " + kind : "");
   }
 
+  // Pip positions per rank as [leftPercent, topPercent].
+  // Pips with topPercent > 50 are rendered upside-down (standard playing-card convention).
+  const PIP_LAYOUTS = {
+    1: [[50, 50]],
+    2: [[50, 18], [50, 82]],
+    3: [[50, 18], [50, 50], [50, 82]],
+    4: [[26, 18], [74, 18], [26, 82], [74, 82]],
+    5: [[26, 18], [74, 18], [50, 50], [26, 82], [74, 82]],
+    6: [[26, 18], [74, 18], [26, 50], [74, 50], [26, 82], [74, 82]],
+    7: [[26, 18], [74, 18], [50, 34], [26, 50], [74, 50], [26, 82], [74, 82]],
+    8: [[26, 18], [74, 18], [50, 34], [26, 50], [74, 50], [50, 66], [26, 82], [74, 82]],
+    9: [[26, 18], [74, 18], [26, 38], [74, 38], [50, 50], [26, 62], [74, 62], [26, 82], [74, 82]],
+    10: [[26, 18], [74, 18], [50, 28], [26, 42], [74, 42], [26, 58], [74, 58], [50, 72], [26, 82], [74, 82]],
+  };
+
+  function buildBody(card) {
+    const body = document.createElement("div");
+    body.className = "card-body";
+
+    if (card.value >= 11) {
+      // Face card: monogram + suit
+      body.classList.add("face");
+      body.innerHTML = `
+        <span class="face-letter">${card.label}</span>
+        <span class="face-suit">${card.symbol}</span>`;
+      return body;
+    }
+
+    if (card.value === 1) {
+      // Ace: one large central pip
+      body.classList.add("ace");
+      const pip = document.createElement("span");
+      pip.className = "pip ace-pip";
+      pip.textContent = card.symbol;
+      body.append(pip);
+      return body;
+    }
+
+    // Number cards 2-10
+    const layout = PIP_LAYOUTS[card.value];
+    for (const [left, top] of layout) {
+      const pip = document.createElement("span");
+      pip.className = "pip" + (top > 50 ? " inverted" : "");
+      pip.style.left = left + "%";
+      pip.style.top = top + "%";
+      pip.textContent = card.symbol;
+      body.append(pip);
+    }
+    return body;
+  }
+
   function makeCardEl(card) {
     const el = document.createElement("div");
     el.className = "card";
@@ -104,19 +155,15 @@
     const face = document.createElement("div");
     face.className = "card-face " + card.color;
 
-    const top = document.createElement("div");
-    top.className = "corner top";
-    top.innerHTML = `<span class="rank">${card.label}</span><span class="suit">${card.symbol}</span>`;
+    const tl = document.createElement("div");
+    tl.className = "corner tl";
+    tl.innerHTML = `<span class="rank">${card.label}</span><span class="suit">${card.symbol}</span>`;
 
-    const pip = document.createElement("div");
-    pip.className = "pip";
-    pip.textContent = card.symbol;
+    const br = document.createElement("div");
+    br.className = "corner br";
+    br.innerHTML = `<span class="rank">${card.label}</span><span class="suit">${card.symbol}</span>`;
 
-    const bot = document.createElement("div");
-    bot.className = "corner bottom";
-    bot.innerHTML = `<span class="rank">${card.label}</span><span class="suit">${card.symbol}</span>`;
-
-    face.append(top, pip, bot);
+    face.append(tl, buildBody(card), br);
     inner.append(back, face);
     el.append(inner);
     return el;

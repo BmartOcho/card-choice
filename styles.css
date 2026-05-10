@@ -196,12 +196,21 @@ body {
 }
 
 .card-face {
-  background: var(--card-face);
+  background: linear-gradient(180deg, #ffffff 0%, #f4f1e8 100%);
   transform: rotateY(180deg);
-  display: grid;
-  grid-template-rows: auto 1fr auto;
-  padding: 8px 10px;
+  padding: 6px 8px;
   font-family: "Georgia", "Times New Roman", serif;
+  position: relative;
+  overflow: hidden;
+}
+
+.card-face::before {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border-radius: calc(var(--radius) - 4px);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  pointer-events: none;
 }
 
 .card-face.red {
@@ -212,32 +221,114 @@ body {
   color: var(--black);
 }
 
+/* Corner indices */
 .corner {
+  position: absolute;
   display: flex;
   flex-direction: column;
   align-items: center;
   line-height: 1;
   font-weight: 700;
+  z-index: 2;
 }
 
-.corner.bottom {
-  justify-self: end;
+.corner.tl {
+  top: 6px;
+  left: 8px;
+}
+
+.corner.br {
+  bottom: 6px;
+  right: 8px;
   transform: rotate(180deg);
 }
 
 .corner .rank {
-  font-size: clamp(14px, 4.5vw, 22px);
+  font-size: clamp(13px, 4.4vw, 20px);
+  letter-spacing: -0.02em;
 }
 
 .corner .suit {
-  font-size: clamp(12px, 4vw, 20px);
-  margin-top: 2px;
+  font-size: clamp(11px, 3.8vw, 17px);
+  margin-top: 1px;
+}
+
+/* Pip body */
+.card-body {
+  position: absolute;
+  /* Inset leaves room for corner indices */
+  inset: 14% 18%;
+  pointer-events: none;
 }
 
 .pip {
-  align-self: center;
-  justify-self: center;
-  font-size: clamp(34px, 12vw, 56px);
+  position: absolute;
+  font-size: clamp(14px, 5.2vw, 24px);
+  line-height: 1;
+  transform: translate(-50%, -50%);
+  display: inline-block;
+}
+
+.pip.inverted {
+  transform: translate(-50%, -50%) rotate(180deg);
+}
+
+/* Ace: one big central pip */
+.card-body.ace {
+  inset: 0;
+}
+
+.pip.ace-pip {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  font-size: clamp(46px, 18vw, 84px);
+  filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.05));
+}
+
+/* Face cards: J / Q / K */
+.card-body.face {
+  inset: 18% 14%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  background: repeating-linear-gradient(
+      45deg,
+      currentColor 0 1px,
+      transparent 1px 6px
+    );
+  background-clip: padding-box;
+  border: 2px solid currentColor;
+  border-radius: 6px;
+  opacity: 1;
+}
+
+.card-body.face::before {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  background: linear-gradient(180deg, #ffffff 0%, #f4f1e8 100%);
+  border-radius: 4px;
+  z-index: 0;
+}
+
+.face-letter {
+  position: relative;
+  z-index: 1;
+  font-family: "Georgia", "Times New Roman", serif;
+  font-weight: 700;
+  font-style: italic;
+  font-size: clamp(34px, 13vw, 60px);
+  line-height: 1;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.06);
+}
+
+.face-suit {
+  position: relative;
+  z-index: 1;
+  font-size: clamp(20px, 7vw, 32px);
   line-height: 1;
 }
 
