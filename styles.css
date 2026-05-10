@@ -200,7 +200,6 @@ body {
   transform: rotateY(180deg);
   padding: 6px 8px;
   font-family: "Georgia", "Times New Roman", serif;
-  position: relative;
   overflow: hidden;
 }
 
