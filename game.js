@@ -588,7 +588,7 @@
         overlayBody.innerHTML = `${lead} · <strong>${today.score.toLocaleString()}</strong> pts<div class="share-preview">${renderGrid(
           today.grid
         )}</div>`;
-        overlayBtn.textContent = "Free Play instead";
+        overlayBtn.textContent = "Free Play";
         shareBtn.hidden = false;
         shareBtn.onclick = () => doShare(today);
         return;
