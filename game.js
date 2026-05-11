@@ -6,7 +6,7 @@
     { key: "clubs", symbol: "♣", color: "black" },
   ];
   const RANKS = [
-    { value: 1, label: "A" },
+    { value: 14, label: "A" },
     { value: 2, label: "2" },
     { value: 3, label: "3" },
     { value: 4, label: "4" },
@@ -95,7 +95,6 @@
   // Pip positions per rank as [leftPercent, topPercent].
   // Pips with topPercent > 50 are rendered upside-down (standard playing-card convention).
   const PIP_LAYOUTS = {
-    1: [[50, 50]],
     2: [[50, 18], [50, 82]],
     3: [[50, 18], [50, 50], [50, 82]],
     4: [[26, 18], [74, 18], [26, 82], [74, 82]],
@@ -111,22 +110,22 @@
     const body = document.createElement("div");
     body.className = "card-body";
 
-    if (card.value >= 11) {
-      // Face card: monogram + suit
-      body.classList.add("face");
-      body.innerHTML = `
-        <span class="face-letter">${card.label}</span>
-        <span class="face-suit">${card.symbol}</span>`;
-      return body;
-    }
-
-    if (card.value === 1) {
-      // Ace: one large central pip
+    if (card.label === "A") {
+      // Ace: one large central pip (rank is always high — value 14)
       body.classList.add("ace");
       const pip = document.createElement("span");
       pip.className = "pip ace-pip";
       pip.textContent = card.symbol;
       body.append(pip);
+      return body;
+    }
+
+    if (card.value >= 11 && card.value <= 13) {
+      // Face card: monogram + suit
+      body.classList.add("face");
+      body.innerHTML = `
+        <span class="face-letter">${card.label}</span>
+        <span class="face-suit">${card.symbol}</span>`;
       return body;
     }
 
