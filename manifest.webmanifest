@@ -1,0 +1,20 @@
+{
+  "name": "Ride the Deck",
+  "short_name": "Ride the Deck",
+  "description": "Make it through the deck: red/black, higher/lower, inside/outside, then the suit. One slip and the deck reshuffles.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0b3d2e",
+  "theme_color": "#0b3d2e",
+  "categories": ["games"],
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -28,6 +28,17 @@
     { name: "Guess the Suit", controls: "suit" },
   ];
 
+  // Base points per stage; multiplied by current combo.
+  const POINTS = { rb: 10, hl: 15, io: 25, suit: 50 };
+  const COMBO_STEP = 0.1;
+
+  const STORE = {
+    stats: "rtd.stats",
+    streak: "rtd.streak",
+    daily: (d) => "rtd.daily." + d,
+  };
+
+  // --- DOM refs ---
   const $ = (id) => document.getElementById(id);
   const lane = $("lane");
   const deckEl = $("deck");
@@ -37,63 +48,40 @@
   const overlayTitle = $("overlay-title");
   const overlayBody = $("overlay-body");
   const overlayBtn = $("overlay-btn");
+  const overlayFoot = $("overlay-foot");
+  const shareBtn = $("share-btn");
   const roundEl = $("round");
   const stageNameEl = $("stage-name");
   const remainingEl = $("remaining");
+  const scoreEl = $("score");
+  const comboEl = $("combo");
+  const comboCell = $("combo-cell");
+  const modeToggle = $("mode-toggle");
+  const dailyDateEl = $("daily-date");
+  const statsBtn = $("stats-btn");
+  const statsOverlay = $("stats-overlay");
+  const statsGrid = $("stats-grid");
+  const statsClose = $("stats-close");
+  const app = $("app");
 
+  // --- State ---
   const state = {
+    mode: "daily",
+    seed: 0,
     deck: [],
-    drawn: [],   // every card revealed this game
-    round: [],   // cards revealed in current round (max 4)
+    drawn: [],
+    round: [],
     stageIdx: 0,
     round_no: 1,
     busy: false,
     over: true,
+    score: 0,
+    combo: 1.0,
+    runGrid: [],
+    currentRoundResults: [],
   };
 
-  function buildDeck() {
-    const d = [];
-    for (const s of SUITS) for (const r of RANKS) d.push({ ...r, ...s });
-    return d;
-  }
-
-  function shuffle(arr) {
-    for (let i = arr.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [arr[i], arr[j]] = [arr[j], arr[i]];
-    }
-    return arr;
-  }
-
-  function startGame() {
-    state.deck = shuffle(buildDeck());
-    state.drawn = [];
-    state.round = [];
-    state.stageIdx = 0;
-    state.round_no = 1;
-    state.busy = false;
-    state.over = false;
-    lane.innerHTML = "";
-    deckEl.classList.remove("empty");
-    setMessage("");
-    updateHud();
-    renderControls();
-    hideOverlay();
-  }
-
-  function updateHud() {
-    roundEl.innerHTML = `${state.round_no}<span class="hud-suffix">/13</span>`;
-    stageNameEl.textContent = STAGES[state.stageIdx].name;
-    remainingEl.textContent = state.deck.length;
-  }
-
-  function setMessage(text, kind = "") {
-    message.textContent = text;
-    message.className = "message" + (kind ? " " + kind : "");
-  }
-
-  // Pip positions per rank as [leftPercent, topPercent].
-  // Pips with topPercent > 50 are rendered upside-down (standard playing-card convention).
+  // --- Card layout (pip positions per rank) ---
   const PIP_LAYOUTS = {
     2: [[50, 18], [50, 82]],
     3: [[50, 18], [50, 50], [50, 82]],
@@ -106,12 +94,127 @@
     10: [[26, 18], [74, 18], [50, 28], [26, 42], [74, 42], [26, 58], [74, 58], [50, 72], [26, 82], [74, 82]],
   };
 
+  // --- Seeded RNG (mulberry32) ---
+  function makeRng(seed) {
+    let h = seed >>> 0;
+    return () => {
+      h = (h + 0x6d2b79f5) >>> 0;
+      let t = h;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  function seedFromString(str) {
+    let h = 1779033703 ^ str.length;
+    for (let i = 0; i < str.length; i++) {
+      h = Math.imul(h ^ str.charCodeAt(i), 3432918353);
+      h = (h << 13) | (h >>> 19);
+    }
+    return h >>> 0;
+  }
+
+  function buildDeck() {
+    const d = [];
+    for (const s of SUITS) for (const r of RANKS) d.push({ ...r, ...s });
+    return d;
+  }
+
+  function shuffleWith(arr, rng) {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }
+
+  function todayKey() {
+    const d = new Date();
+    return d.toISOString().slice(0, 10);
+  }
+
+  function todayDisplay() {
+    return new Date().toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+    });
+  }
+
+  // --- Persistence ---
+  function load(key, fallback) {
+    try {
+      const v = localStorage.getItem(key);
+      return v ? JSON.parse(v) : fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
+  function save(key, value) {
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+    } catch {}
+  }
+
+  function defaultStats() {
+    return {
+      gamesPlayed: 0,
+      gamesWon: 0,
+      bestCards: 0,
+      bestScore: 0,
+      totalCards: 0,
+    };
+  }
+
+  function loadStats() {
+    return load(STORE.stats, defaultStats());
+  }
+
+  function loadStreak() {
+    return load(STORE.streak, { current: 0, longest: 0, lastDate: null });
+  }
+
+  function loadDaily(date) {
+    return load(STORE.daily(date), null);
+  }
+
+  function bumpStreak() {
+    const today = todayKey();
+    const s = loadStreak();
+    if (s.lastDate === today) return;
+    const yesterday = (() => {
+      const d = new Date();
+      d.setDate(d.getDate() - 1);
+      return d.toISOString().slice(0, 10);
+    })();
+    s.current = s.lastDate === yesterday ? s.current + 1 : 1;
+    s.longest = Math.max(s.longest, s.current);
+    s.lastDate = today;
+    save(STORE.streak, s);
+  }
+
+  // --- Haptics ---
+  function vibrate(pattern) {
+    if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
+      try {
+        navigator.vibrate(pattern);
+      } catch {}
+    }
+  }
+  const haptic = {
+    tap: () => vibrate(8),
+    win: () => vibrate([18, 24, 18]),
+    miss: () => vibrate([60, 40, 90]),
+    big: () => vibrate([16, 18, 16, 18, 32]),
+  };
+
+  // --- Card rendering ---
   function buildBody(card) {
     const body = document.createElement("div");
     body.className = "card-body";
 
     if (card.label === "A") {
-      // Ace: one large central pip (rank is always high — value 14)
       body.classList.add("ace");
       const pip = document.createElement("span");
       pip.className = "pip ace-pip";
@@ -121,7 +224,6 @@
     }
 
     if (card.value >= 11 && card.value <= 13) {
-      // Face card: monogram + suit
       body.classList.add("face");
       body.innerHTML = `
         <span class="face-letter">${card.label}</span>
@@ -129,7 +231,6 @@
       return body;
     }
 
-    // Number cards 2-10
     const layout = PIP_LAYOUTS[card.value];
     for (const [left, top] of layout) {
       const pip = document.createElement("span");
@@ -168,20 +269,76 @@
     return el;
   }
 
+  // --- Game flow ---
+  function startGame() {
+    if (state.mode === "daily") {
+      state.seed = seedFromString("rtd-" + todayKey());
+    } else {
+      state.seed = (Math.random() * 0xffffffff) >>> 0;
+    }
+    const rng = makeRng(state.seed);
+    state.deck = shuffleWith(buildDeck(), rng);
+    state.drawn = [];
+    state.round = [];
+    state.runGrid = [];
+    state.currentRoundResults = [];
+    state.stageIdx = 0;
+    state.round_no = 1;
+    state.busy = false;
+    state.over = false;
+    state.score = 0;
+    state.combo = 1.0;
+
+    lane.innerHTML = "";
+    deckEl.classList.remove("empty");
+    setMessage("");
+    updateScore();
+    updateHud();
+    renderControls();
+    hideOverlay();
+  }
+
+  function updateHud() {
+    roundEl.innerHTML = `${state.round_no}<span class="hud-suffix">/13</span>`;
+    stageNameEl.textContent = STAGES[state.stageIdx].name;
+    remainingEl.textContent = state.deck.length;
+  }
+
+  function updateScore() {
+    scoreEl.textContent = state.score.toLocaleString();
+    if (state.combo > 1.0) {
+      comboEl.textContent = "×" + state.combo.toFixed(1);
+      comboCell.hidden = false;
+      comboEl.style.animation = "none";
+      // restart animation
+      void comboEl.offsetWidth;
+      comboEl.style.animation = "";
+    } else {
+      comboCell.hidden = true;
+    }
+  }
+
+  function setMessage(text, kind = "") {
+    message.textContent = text;
+    message.className = "message" + (kind ? " " + kind : "");
+  }
+
   function trimLane(maxBefore) {
-    // keep only the most recent `maxBefore` reference cards in lane (visually)
     while (lane.children.length > maxBefore) {
       lane.removeChild(lane.firstChild);
     }
   }
 
-  // Visually shrink older lane cards so newest is biggest
   function decorateLane() {
     const cards = Array.from(lane.children);
     cards.forEach((c, i) => {
       if (i < cards.length - 1) c.classList.add("muted");
       else c.classList.remove("muted");
     });
+  }
+
+  function wait(ms) {
+    return new Promise((r) => setTimeout(r, ms));
   }
 
   async function dealCard() {
@@ -197,15 +354,11 @@
 
     if (state.deck.length === 0) deckEl.classList.add("empty");
 
-    // wait for deal-in to settle
+    haptic.tap();
     await wait(300);
     el.classList.add("flipped");
     await wait(560);
     return { card, el };
-  }
-
-  function wait(ms) {
-    return new Promise((r) => setTimeout(r, ms));
   }
 
   function renderControls() {
@@ -243,30 +396,23 @@
   }
 
   function setControlsEnabled(enabled) {
-    controls.querySelectorAll("button").forEach((b) => {
-      b.disabled = !enabled;
-    });
+    controls.querySelectorAll("button").forEach((b) => (b.disabled = !enabled));
   }
 
   function evaluate(stageKey, choice, prev, next) {
-    if (stageKey === "rb") {
-      return next.color === choice;
-    }
+    if (stageKey === "rb") return next.color === choice;
     if (stageKey === "hl") {
-      if (next.value === prev.value) return false; // tie loses
+      if (next.value === prev.value) return false;
       return choice === "higher" ? next.value > prev.value : next.value < prev.value;
     }
     if (stageKey === "io") {
       const a = Math.min(prev[0].value, prev[1].value);
       const b = Math.max(prev[0].value, prev[1].value);
-      // matching either bound = loss
       if (next.value === a || next.value === b) return false;
       const inside = next.value > a && next.value < b;
       return choice === "inside" ? inside : !inside;
     }
-    if (stageKey === "suit") {
-      return next.key === choice;
-    }
+    if (stageKey === "suit") return next.key === choice;
     return false;
   }
 
@@ -276,29 +422,31 @@
     setControlsEnabled(false);
 
     const stage = STAGES[state.stageIdx];
-    const prevCards = state.round.slice(); // cards already in this round before draw
-
+    const prevCards = state.round.slice();
     const { card: drawn, el } = await dealCard();
 
     let won;
-    if (stage.controls === "rb") {
-      won = evaluate("rb", choice, null, drawn);
-    } else if (stage.controls === "hl") {
-      won = evaluate("hl", choice, prevCards[0], drawn);
-    } else if (stage.controls === "io") {
-      won = evaluate("io", choice, [prevCards[0], prevCards[1]], drawn);
-    } else {
-      won = evaluate("suit", choice, null, drawn);
-    }
+    if (stage.controls === "rb") won = evaluate("rb", choice, null, drawn);
+    else if (stage.controls === "hl") won = evaluate("hl", choice, prevCards[0], drawn);
+    else if (stage.controls === "io") won = evaluate("io", choice, [prevCards[0], prevCards[1]], drawn);
+    else won = evaluate("suit", choice, null, drawn);
 
     if (won) {
       el.classList.add("win");
-      setMessage(winMessage(stage, choice, drawn), "win");
+      const earned = Math.round(POINTS[stage.controls] * state.combo);
+      state.score += earned;
+      state.combo = +(state.combo + COMBO_STEP).toFixed(2);
+      state.currentRoundResults.push(true);
+      updateScore();
+      haptic.win();
+      setMessage(`${winMessage(stage, choice, drawn)} +${earned}`, "win");
       await wait(650);
 
       state.stageIdx++;
       if (state.stageIdx >= STAGES.length) {
         // round complete
+        state.runGrid.push(state.currentRoundResults);
+        state.currentRoundResults = [];
         state.stageIdx = 0;
         state.round_no++;
         state.round = [];
@@ -308,21 +456,13 @@
           return;
         }
 
-        // clear lane between rounds for clarity
         await wait(250);
         lane.innerHTML = "";
-        setMessage(`Round ${state.round_no} — keep the streak going.`);
+        setMessage(`Round ${state.round_no} — keep it going.`);
       } else {
-        // For inside/outside we need 2 reference cards in lane.
-        // For hl we only need the latest. Trim accordingly.
         const next = STAGES[state.stageIdx];
-        if (next.controls === "io") {
-          trimLane(2);
-        } else if (next.controls === "suit") {
-          trimLane(1);
-        } else if (next.controls === "hl") {
-          trimLane(1);
-        }
+        if (next.controls === "io") trimLane(2);
+        else if (next.controls === "suit" || next.controls === "hl") trimLane(1);
         decorateLane();
       }
 
@@ -331,6 +471,10 @@
       state.busy = false;
     } else {
       el.classList.add("lose");
+      state.currentRoundResults.push(false);
+      state.combo = 1.0;
+      updateScore();
+      haptic.miss();
       setMessage(loseMessage(stage, choice, drawn), "lose");
       await wait(1100);
       gameOver();
@@ -339,10 +483,10 @@
 
   function winMessage(stage, choice, card) {
     const name = `${card.label}${card.symbol}`;
-    if (stage.controls === "rb") return `${name} — ${card.color}. Nice.`;
-    if (stage.controls === "hl") return `${name}. ${cap(choice)} — got it.`;
-    if (stage.controls === "io") return `${name}. ${cap(choice)} — nailed it.`;
-    if (stage.controls === "suit") return `${name}. Suit on the nose!`;
+    if (stage.controls === "rb") return `${name} — ${card.color}.`;
+    if (stage.controls === "hl") return `${name}. ${cap(choice)}.`;
+    if (stage.controls === "io") return `${name}. ${cap(choice)}.`;
+    if (stage.controls === "suit") return `${name}. On the nose!`;
     return "Correct";
   }
 
@@ -350,8 +494,7 @@
     const name = `${card.label}${card.symbol}`;
     if (stage.controls === "rb") return `${name} — wrong color.`;
     if (stage.controls === "hl") {
-      if (state.round[state.round.length - 2]?.value === card.value)
-        return `${name} — tie loses.`;
+      if (state.round[state.round.length - 2]?.value === card.value) return `${name} — tie loses.`;
       return `${name} — wrong way.`;
     }
     if (stage.controls === "io") return `${name} — missed it.`;
@@ -367,24 +510,53 @@
     state.over = true;
     state.busy = false;
     controls.innerHTML = "";
-    overlayTitle.textContent = "Reshuffling...";
-    overlayBody.innerHTML = `You made it through <strong>${state.drawn.length - 1}</strong> card${
-      state.drawn.length - 1 === 1 ? "" : "s"
-    } before busting on round ${state.round_no}.`;
-    overlayBtn.textContent = "New Deck";
-    showOverlay();
+
+    // record the failed (partial) round in the grid
+    if (state.currentRoundResults.length) {
+      state.runGrid.push(state.currentRoundResults);
+      state.currentRoundResults = [];
+    }
+
+    persistEndOfGame(false);
+    showResultOverlay(false);
   }
 
   async function celebrateWin() {
     state.over = true;
     state.busy = false;
     controls.innerHTML = "";
-    overlayTitle.textContent = "You rode the whole deck!";
-    overlayBody.innerHTML = "All 52 cards. That's the run.";
-    overlayBtn.textContent = "Play Again";
-    showOverlay();
+
+    haptic.big();
+    fireConfetti(true);
+
+    persistEndOfGame(true);
+    await wait(400);
+    showResultOverlay(true);
   }
 
+  function persistEndOfGame(cleared) {
+    const cards = state.drawn.length - (cleared ? 0 : 1);
+    const stats = loadStats();
+    stats.gamesPlayed += 1;
+    if (cleared) stats.gamesWon += 1;
+    stats.totalCards += cards;
+    stats.bestCards = Math.max(stats.bestCards, cards);
+    stats.bestScore = Math.max(stats.bestScore, state.score);
+    save(STORE.stats, stats);
+
+    if (state.mode === "daily") {
+      save(STORE.daily(todayKey()), {
+        date: todayKey(),
+        cleared,
+        score: state.score,
+        cards,
+        grid: state.runGrid,
+      });
+      bumpStreak();
+    }
+  }
+
+  // --- Overlays ---
   function showOverlay() {
     overlay.hidden = false;
   }
@@ -392,8 +564,180 @@
     overlay.hidden = true;
   }
 
-  overlayBtn.addEventListener("click", startGame);
+  function setMode(mode) {
+    state.mode = mode;
+    modeToggle.querySelectorAll(".mode-btn").forEach((b) => {
+      b.classList.toggle("active", b.dataset.mode === mode);
+    });
+    refreshStartOverlay();
+  }
 
-  // initial overlay text already in DOM; just show it
+  function refreshStartOverlay() {
+    // shown before a game starts (or when launched fresh)
+    dailyDateEl.textContent = todayDisplay();
+    modeToggle.hidden = false;
+    overlayFoot.textContent = "";
+
+    if (state.mode === "daily") {
+      const today = loadDaily(todayKey());
+      if (today) {
+        const lead = today.cleared
+          ? `Cleared the deck`
+          : `${today.cards} card${today.cards === 1 ? "" : "s"} deep`;
+        overlayTitle.textContent = "Today's run";
+        overlayBody.innerHTML = `${lead} · <strong>${today.score.toLocaleString()}</strong> pts<div class="share-preview">${renderGrid(
+          today.grid
+        )}</div>`;
+        overlayBtn.textContent = "Free Play instead";
+        shareBtn.hidden = false;
+        shareBtn.onclick = () => doShare(today);
+        return;
+      }
+      overlayTitle.textContent = "Daily Challenge";
+      overlayBody.innerHTML = `Same shuffled deck for everyone today. <br/>One run, share your result.`;
+    } else {
+      overlayTitle.textContent = "Free Play";
+      overlayBody.innerHTML = `Fresh shuffle, no limits.`;
+    }
+    overlayBtn.textContent = "Deal";
+    shareBtn.hidden = true;
+  }
+
+  function showResultOverlay(cleared) {
+    modeToggle.hidden = false;
+    const cards = state.drawn.length - (cleared ? 0 : 1);
+    overlayTitle.textContent = cleared
+      ? "You rode the whole deck!"
+      : state.mode === "daily"
+      ? "Today's run"
+      : "Reshuffling";
+
+    const result = {
+      date: todayKey(),
+      cleared,
+      score: state.score,
+      cards,
+      grid: state.runGrid,
+    };
+
+    overlayBody.innerHTML = `${cleared ? "All 52 cards" : `${cards} card${cards === 1 ? "" : "s"}`} · <strong>${state.score.toLocaleString()}</strong> pts<div class="share-preview">${renderGrid(
+      result.grid
+    )}</div>`;
+
+    if (state.mode === "daily") {
+      overlayBtn.textContent = "Free Play";
+      shareBtn.hidden = false;
+      shareBtn.onclick = () => doShare(result);
+    } else {
+      overlayBtn.textContent = "New Deck";
+      shareBtn.hidden = true;
+    }
+    showOverlay();
+  }
+
+  function renderGrid(grid) {
+    if (!grid || !grid.length) return "";
+    return grid.map((row) => row.map((b) => (b ? "🟩" : "⬛")).join("")).join("\n");
+  }
+
+  function shareText(result) {
+    const grid = renderGrid(result.grid);
+    const head = `Ride the Deck — ${result.date}`;
+    const line = result.cleared
+      ? `Cleared 52/52`
+      : `${result.cards} card${result.cards === 1 ? "" : "s"} deep`;
+    return `${head}\n${line} · ${result.score.toLocaleString()} pts\n\n${grid}\n\ncard-choice.vercel.app`;
+  }
+
+  async function doShare(result) {
+    const text = shareText(result);
+    if (navigator.share) {
+      try {
+        await navigator.share({ text });
+        return;
+      } catch {
+        // user cancelled or failed — fall through to clipboard
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      flashFoot("Copied to clipboard");
+    } catch {
+      // last resort
+      flashFoot("Copy your result:\n" + text);
+    }
+  }
+
+  function flashFoot(text) {
+    overlayFoot.textContent = text;
+    clearTimeout(flashFoot._t);
+    flashFoot._t = setTimeout(() => {
+      overlayFoot.textContent = "";
+    }, 2500);
+  }
+
+  // --- Stats overlay ---
+  function showStats() {
+    const stats = loadStats();
+    const streak = loadStreak();
+    statsGrid.innerHTML = "";
+    const items = [
+      ["Games", stats.gamesPlayed],
+      ["Cleared", stats.gamesWon],
+      ["Best Run", stats.bestCards + " cards"],
+      ["Best Score", stats.bestScore.toLocaleString()],
+      ["Daily Streak", streak.current],
+      ["Longest", streak.longest],
+    ];
+    for (const [label, value] of items) {
+      const div = document.createElement("div");
+      div.className = "stat";
+      div.innerHTML = `<span class="stat-label">${label}</span><span class="stat-value">${value}</span>`;
+      statsGrid.append(div);
+    }
+    statsOverlay.hidden = false;
+  }
+
+  // --- Confetti ---
+  function fireConfetti(big = false) {
+    const c = document.createElement("div");
+    c.className = "confetti";
+    const count = big ? 90 : 30;
+    const colors = ["#d23030", "#f0c75e", "#6cd391", "#5a9bd4", "#ffffff"];
+    for (let i = 0; i < count; i++) {
+      const piece = document.createElement("span");
+      piece.style.left = Math.random() * 100 + "%";
+      piece.style.background = colors[Math.floor(Math.random() * colors.length)];
+      piece.style.animationDelay = Math.random() * 0.4 + "s";
+      piece.style.animationDuration = 1.2 + Math.random() * 1.2 + "s";
+      c.append(piece);
+    }
+    app.append(c);
+    setTimeout(() => c.remove(), 3000);
+  }
+
+  // --- Wire up ---
+  modeToggle.querySelectorAll(".mode-btn").forEach((b) => {
+    b.addEventListener("click", () => setMode(b.dataset.mode));
+  });
+  overlayBtn.addEventListener("click", () => {
+    // If daily already played today, "Free Play instead" jumps to free play.
+    if (state.mode === "daily") {
+      const today = loadDaily(todayKey());
+      if (today && !state.over) {
+        // shouldn't happen, but guard
+      } else if (today) {
+        state.mode = "free";
+      }
+    }
+    startGame();
+  });
+  statsBtn.addEventListener("click", showStats);
+  statsClose.addEventListener("click", () => {
+    statsOverlay.hidden = true;
+  });
+
+  // First render
+  refreshStartOverlay();
   showOverlay();
 })();
